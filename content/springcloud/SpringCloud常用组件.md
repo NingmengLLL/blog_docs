@@ -11,7 +11,7 @@ Eureka包含两个组件：Eureka Server和Eureka Client，是Netflix提供的�
 
 元信息：Eureka client注册到server上面提供的信息，server会持有整个系统所有微服务的信息。
 
-Eureka Client: 
+### Eureka Client: 
 
 服务注册：client在启动之后，向server注册，把自身的信息告诉server 
 
