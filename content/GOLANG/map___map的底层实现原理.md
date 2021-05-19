@@ -213,11 +213,150 @@ func strequal(p, q unsafe.Pointer) bool {
 ```
 根据 key 的类型，_type 结构体的 alg 字段会被设置对应类型的 hash 和 equal 函数。
 ## <span id="jump6">key定位过程</span>
+key 经过哈希计算后得到哈希值，共 64 个 bit 位（64位机，32位机就不讨论了，现在主流都是64位机），计算它到底要落在哪个桶时，只会用到最后 B 个 bit 位。还记得前面提到过的 B 吗？如果 B = 5，那么桶的数量，也就是 buckets 数组的长度是 2^5 = 32。
 
+例如，现在有一个 key 经过哈希函数计算后，得到的哈希结果是：
+```text
+ 10010111 | 000011110110110010001111001010100010010110010101010 │ 01010
+```
+用最后的 5 个 bit 位，也就是 01010，值为 10，也就是 10 号桶。这个操作实际上就是取余操作，但是取余开销太大，所以代码实现上用的位操作代替。
 
+再用哈希值的高 8 位，找到此 key 在 bucket 中的位置，这是在寻找已有的 key。最开始桶内还没有 key，新加入的 key 会找到第一个空位，放入。
 
+buckets 编号就是桶编号，当两个不同的 key 落在同一个桶中，也就是发生了哈希冲突。冲突的解决手段是用链表法：在 bucket 中，从前往后找到第一个空位。这样，在查找某个 key 时，先找到对应的桶，再去遍历 bucket 中的 key。
+<img src="./images/key.png" alt="key" style="zoom:40%;" />
+上图中，假定 B = 5，所以 bucket 总数就是 2^5 = 32。首先计算出待查找 key 的哈希，使用低 5 位 00110，找到对应的 6 号 bucket，使用高 8 位 10010111，对应十进制 151，在 6 号 bucket 中寻找 tophash 值（HOB hash）为 151 的 key，找到了 2 号槽位，这样整个查找过程就结束了。
 
+如果在 bucket 中没找到，并且 overflow 不为空，还要继续去 overflow bucket 中寻找，直到找到或是所有的 key 槽位都找遍了，包括所有的 overflow bucket。
 
+查找某个 key 的底层函数是 mapacess 系列函数，函数的作用类似，区别在下一节会讲到。这里我们直接看 mapacess1 函数：
+```go
+func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
+    // ……
+    // 如果 h 什么都没有，返回零值
+    if h == nil || h.count == 0 {
+        return unsafe.Pointer(&zeroVal[0])
+    }
+    // 写和读冲突
+    if h.flags&hashWriting != 0 {
+        throw("concurrent map read and map write")
+    }
+    // 不同类型 key 使用的 hash 算法在编译期确定
+    alg := t.key.alg
+    // 计算哈希值，并且加入 hash0 引入随机性
+    hash := alg.hash(key, uintptr(h.hash0))
+    // 比如 B=5，那 m 就是31，二进制是全 1
+    // 求 bucket num 时，将 hash 与 m 相与，
+    // 达到 bucket num 由 hash 的低 8 位决定的效果
+    m := uintptr(1)<<h.B - 1
+    // b 就是 bucket 的地址
+    b := (*bmap)(add(h.buckets, (hash&m)*uintptr(t.bucketsize)))
+    // oldbuckets 不为 nil，说明发生了扩容
+    if c := h.oldbuckets; c != nil {
+        // 如果不是同 size 扩容（看后面扩容的内容）
+        // 对应条件 1 的解决方案
+        if !h.sameSizeGrow() {
+            // 新 bucket 数量是老的 2 倍
+            m >>= 1
+        }
+        // 求出 key 在老的 map 中的 bucket 位置
+        oldb := (*bmap)(add(c, (hash&m)*uintptr(t.bucketsize)))
+        // 如果 oldb 没有搬迁到新的 bucket
+        // 那就在老的 bucket 中寻找
+        if !evacuated(oldb) {
+            b = oldb
+        }
+    }
+    // 计算出高 8 位的 hash
+    // 相当于右移 56 位，只取高8位
+    top := uint8(hash >> (sys.PtrSize*8 - 8))
+    // 增加一个 minTopHash
+    if top < minTopHash {
+        top += minTopHash
+    }
+    for {
+        // 遍历 8 个 bucket
+        for i := uintptr(0); i < bucketCnt; i++ {
+            // tophash 不匹配，继续
+            if b.tophash[i] != top {
+                continue
+            }
+            // tophash 匹配，定位到 key 的位置
+            k := add(unsafe.Pointer(b), dataOffset+i*uintptr(t.keysize))
+            // key 是指针
+            if t.indirectkey {
+                // 解引用
+                k = *((*unsafe.Pointer)(k))
+            }
+            // 如果 key 相等
+            if alg.equal(key, k) {
+                // 定位到 value 的位置
+                v := add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.valuesize))
+                // value 解引用
+                if t.indirectvalue {
+                    v = *((*unsafe.Pointer)(v))
+                }
+                return v
+            }
+        }
+        // bucket 找完（还没找到），继续到 overflow bucket 里找
+        b = b.overflow(t)
+        // overflow bucket 也找完了，说明没有目标 key
+        // 返回零值
+        if b == nil {
+            return unsafe.Pointer(&zeroVal[0])
+        }
+    }
+}
+```
+函数返回 h[key] 的指针，如果 h 中没有此 key，那就会返回一个 key 相应类型的零值，不会返回 nil。 代码整体比较直接，没什么难懂的地方。跟着上面的注释一步步理解就好了。
+这里，说一下定位 key 和 value 的方法以及整个循环的写法。
+```go
+// key 定位公式
+k := add(unsafe.Pointer(b), dataOffset+i*uintptr(t.keysize))
+// value 定位公式
+v := add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.valuesize))
+```
+b 是 bmap 的地址，这里 bmap 还是源码里定义的结构体，只包含一个 tophash 数组，经编译器扩充之后的结构体才包含 key，value，overflow 这些字段。dataOffset 是 key 相对于 bmap 起始地址的偏移：
+```go
+dataOffset = unsafe.Offsetof(struct {
+        b bmap
+        v int64
+    }{}.v)
+```
+因此 bucket 里 key 的起始地址就是 unsafe.Pointer(b)+dataOffset。第 i 个 key 的地址就要在此基础上跨过 i 个 key 的大小；而我们又知道，value 的地址是在所有 key 之后，因此第 i 个 value 的地址还需要加上所有 key 的偏移。理解了这些，上面 key 和 value 的定位公式就很好理解了。
 
+再说整个大循环的写法，最外层是一个无限循环，通过
+```go
+b = b.overflow(t)
+```
+遍历所有的 bucket，这相当于是一个 bucket 链表。
 
+当定位到一个具体的 bucket 时，里层循环就是遍历这个 bucket 里所有的 cell，或者说所有的槽位，也就是 bucketCnt=8 个槽位。整个循环过程：
 
+<img src="./images/循环过程.png" alt="循环过程" style="zoom:40%;" />
+
+再说一下 minTopHash，当一个 cell 的 tophash 值小于 minTopHash 时，标志这个 cell 的迁移状态。因为这个状态值是放在 tophash 数组里，为了和正常的哈希值区分开，会给 key 计算出来的哈希值一个增量：minTopHash。这样就能区分正常的 top hash 值和表示状态的哈希值。
+
+下面的这几种状态就表征了 bucket 的情况：
+```go
+// 空的 cell，也是初始时 bucket 的状态
+empty          = 0
+// 空的 cell，表示 cell 已经被迁移到新的 bucket
+evacuatedEmpty = 1
+// key,value 已经搬迁完毕，但是 key 都在新 bucket 前半部分，
+// 后面扩容部分会再讲到。
+evacuatedX     = 2
+// 同上，key 在后半部分
+evacuatedY     = 3
+// tophash 的最小正常值
+minTopHash     = 4
+```
+源码里判断这个 bucket 是否已经搬迁完毕，用到的函数：
+```go
+func evacuated(b *bmap) bool {
+    h := b.tophash[0]
+    return h > empty && h < minTopHash
+}
+```
+只取了 tophash 数组的第一个值，判断它是否在 0-4 之间。对比上面的常量，当 top hash 是 evacuatedEmpty、evacuatedX、evacuatedY 这三个值之一，说明此 bucket 中的 key 全部被搬迁到了新 bucket。
