@@ -5,7 +5,7 @@
 }
 ```
 
-<img src="./images/img.png" alt="img" align="middle" style="zoom:40%;" />
+<img src="./images/img.png" alt="img"  style="zoom:40%;" />
 
 ---
 
