@@ -18,6 +18,14 @@
 
 &emsp; &emsp; [key定位过程](#jump6)
 
+&emsp; &emsp; [map的赋值过程](#jump7)
+
+&emsp; &emsp; [map的遍历过程](#jump8)
+
+&emsp; &emsp; [map的删除过程](#jump9)
+
+&emsp; &emsp; [map的扩容过程](#jump10)
+
 # <span id="jump1">什么是map</span>
 
 map 的设计也被称为 “The dictionary problem”，它的任务是设计一种数据结构用来维护一个集合的数据，并且可以同时对集合进行增删查改的操作。
@@ -360,3 +368,9 @@ func evacuated(b *bmap) bool {
 }
 ```
 只取了 tophash 数组的第一个值，判断它是否在 0-4 之间。对比上面的常量，当 top hash 是 evacuatedEmpty、evacuatedX、evacuatedY 这三个值之一，说明此 bucket 中的 key 全部被搬迁到了新 bucket。
+
+## <span id="jump7">map的赋值过程</span>
+## <span id="jump8">map的遍历过程</span>
+## <span id="jump9">map的删除过程</span>
+## <span id="jump10">map的扩容过程</span>
+
