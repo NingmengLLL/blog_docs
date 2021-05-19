@@ -89,7 +89,7 @@ bmap 就是我们常说的“桶”，桶里面会最多装 8 个 key，这些 k
 在桶内，又会根据 key 计算出来的 hash 值的高 8 位来决定 key 到底落入桶内的哪个位置（一个桶内最多有8个位置）。
 
 来一个整体的图：
-<img src="./images/hmap.png" alt="hmap" style="zoom:40%;" />
+<img src="./images/map_realize/hmap.png" alt="hmap" style="zoom:40%;" />
 当 map 的 key 和 value 都不是指针，并且 size 都小于 128 字节的情况下，会把 bmap 标记为不含指针，这样可以避免 gc 时扫描整个 hmap。但是，我们看 bmap 其实有一个 overflow 的字段，是指针类型的，破坏了 bmap 不含指针的设想，这时会把 overflow 移动到 extra 字段来。
 ```go
 type mapextra struct {
@@ -101,7 +101,7 @@ type mapextra struct {
 }
 ```
 bmap 是存放 k-v 的地方，看 bmap 的内部组成。
-<img src="./images/bmap.png" alt="bmap" style="zoom:40%;" />
+<img src="./images/map_realize/bmap.png" alt="bmap" style="zoom:40%;" />
 上图就是 bucket 的内存模型，HOB Hash 指的就是 top hash。 注意到 key 和 value 是各自放在一起的，并不是 key/value/key/value/... 这样的形式。源码里说明这样的好处是在某些情况下可以省略掉 padding 字段，节省内存空间。
 
 例如，有这样一个类型的 map：map[int64]int8
@@ -232,7 +232,7 @@ key 经过哈希计算后得到哈希值，共 64 个 bit 位（64位机，32位
 再用哈希值的高 8 位，找到此 key 在 bucket 中的位置，这是在寻找已有的 key。最开始桶内还没有 key，新加入的 key 会找到第一个空位，放入。
 
 buckets 编号就是桶编号，当两个不同的 key 落在同一个桶中，也就是发生了哈希冲突。冲突的解决手段是用链表法：在 bucket 中，从前往后找到第一个空位。这样，在查找某个 key 时，先找到对应的桶，再去遍历 bucket 中的 key。
-<img src="./images/key.png" alt="key" style="zoom:40%;" />
+<img src="./images/map_realize/key.png" alt="key" style="zoom:40%;" />
 上图中，假定 B = 5，所以 bucket 总数就是 2^5 = 32。首先计算出待查找 key 的哈希，使用低 5 位 00110，找到对应的 6 号 bucket，使用高 8 位 10010111，对应十进制 151，在 6 号 bucket 中寻找 tophash 值（HOB hash）为 151 的 key，找到了 2 号槽位，这样整个查找过程就结束了。
 
 如果在 bucket 中没找到，并且 overflow 不为空，还要继续去 overflow bucket 中寻找，直到找到或是所有的 key 槽位都找遍了，包括所有的 overflow bucket。
@@ -342,7 +342,7 @@ b = b.overflow(t)
 
 当定位到一个具体的 bucket 时，里层循环就是遍历这个 bucket 里所有的 cell，或者说所有的槽位，也就是 bucketCnt=8 个槽位。整个循环过程：
 
-<img src="./images/循环过程.png" alt="循环过程" style="zoom:40%;" />
+<img src="images/map_realize/循环过程.png" alt="循环过程" style="zoom:40%;" />
 
 再说一下 minTopHash，当一个 cell 的 tophash 值小于 minTopHash 时，标志这个 cell 的迁移状态。因为这个状态值是放在 tophash 数组里，为了和正常的哈希值区分开，会给 key 计算出来的哈希值一个增量：minTopHash。这样就能区分正常的 top hash 值和表示状态的哈希值。
 
@@ -375,7 +375,7 @@ func evacuated(b *bmap) bool {
 实际上插入或修改 key 的语法是一样的，只不过前者操作的 key 在 map 中不存在，而后者操作的 key 存在 map 中。
 
 mapassign 有一个系列的函数，根据 key 类型的不同，编译器会将其优化为相应的“快速函数”。
-<img src="./images/key类型插入.png" alt="key类型插入" style="zoom:40%;" />
+<img src="./images/map_realize/map_realize/key类型插入.png" alt="key类型插入" style="zoom:40%;" />
 我们只用研究最一般的赋值函数 mapassign。
 
 整体来看，流程非常得简单：对 key 计算 hash 值，根据 hash 值按照之前的流程，找到要赋值的位置（可能是插入新 key，也可能是更新老 key），对相应位置进行赋值。
