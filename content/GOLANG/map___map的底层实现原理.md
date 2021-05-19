@@ -375,7 +375,7 @@ func evacuated(b *bmap) bool {
 实际上插入或修改 key 的语法是一样的，只不过前者操作的 key 在 map 中不存在，而后者操作的 key 存在 map 中。
 
 mapassign 有一个系列的函数，根据 key 类型的不同，编译器会将其优化为相应的“快速函数”。
-<img src="./images/map_realize/map_realize/key类型插入.png" alt="key类型插入" style="zoom:40%;" />
+<img src="./images/map_realize/key类型插入.png" alt="key类型插入" style="zoom:40%;" />
 我们只用研究最一般的赋值函数 mapassign。
 
 整体来看，流程非常得简单：对 key 计算 hash 值，根据 hash 值按照之前的流程，找到要赋值的位置（可能是插入新 key，也可能是更新老 key），对相应位置进行赋值。
