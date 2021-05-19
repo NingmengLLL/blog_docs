@@ -443,7 +443,7 @@ go tool compile -S main.go
 ```
 这样，关于 map 迭代，底层的函数调用关系一目了然。先是调用 mapiterinit 函数初始化迭代器，然后循环调用 mapiternext 函数进行 map 迭代。
 
-<img src="./images/底层_遍历_1.png" alt="底层_遍历_1" style="zoom:40%;" width="160" />
+<img src="./images/底层_遍历_1.png" alt="底层_遍历_1" style="zoom:40%;" width="80" height="308"/>
 
 迭代器的结构体定义：
 ```go
