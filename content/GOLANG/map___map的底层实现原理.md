@@ -408,6 +408,8 @@ func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer
 ```
 mapassign 函数返回的指针就是指向的 key 所对应的 value 值位置，有了地址，就很好操作赋值了。
 ## <span id="jump8">map的遍历过程</span>
+
+
 ## <span id="jump9">map的删除过程</span>
 ## <span id="jump10">map的扩容过程</span>
 
