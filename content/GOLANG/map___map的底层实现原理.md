@@ -557,6 +557,37 @@ minTopHash = 4
 
 map 遍历的核心在于理解 2 倍扩容时，老 bucket 会分裂到 2 个新 bucket 中去。而遍历操作，会按照新 bucket 的序号顺序进行，碰到老 bucket 未搬迁的情况时，要在老 bucket 中找到将来要搬迁到新 bucket 来的 key。
 ## <span id="jump9">map的删除过程</span>
+
+写操作底层的执行函数是 mapdelete：
+```go
+func mapdelete(t *maptype, h *hmap, key unsafe.Pointer)
+```
+根据 key 类型的不同，删除操作会被优化成更具体的函数：
+<img src="./images/底层_删除_1.png" alt="底层_删除_1" style="zoom:40%;" />
+当然，我们只关心 mapdelete 函数。它首先会检查 h.flags 标志，如果发现写标位是 1，直接 panic，因为这表明有其他协程同时在进行写操作。
+
+计算 key 的哈希，找到落入的 bucket。检查此 map 如果正在扩容的过程中，直接触发一次搬迁操作。
+
+删除操作同样是两层循环，核心还是找到 key 的具体位置。寻找过程都是类似的，在 bucket 中挨个 cell 寻找。
+
+找到对应位置后，对 key 或者 value 进行“清零”操作：
+```go
+// 对 key 清零
+if t.indirectkey {
+    *(*unsafe.Pointer)(k) = nil
+} else {
+    typedmemclr(t.key, k)
+}
+// 对 value 清零
+if t.indirectvalue {
+    *(*unsafe.Pointer)(v) = nil
+} else {
+    typedmemclr(t.elem, v)
+}
+```
+最后，将 count 值减 1，将对应位置的 tophash 值置成 Empty。
+
+这块源码同样比较简单，感兴起直接去看代码。
 ## <span id="jump10">map的扩容过程</span>
 
 
