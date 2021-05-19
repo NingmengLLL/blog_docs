@@ -2,7 +2,7 @@
 {
   "date": "2021.05.19 17:50",
   "tags": ["golang","map","float"],
-  "description":""
+  "description":"记录一下map的底层实现，包括内存模型，哈希函数，key定位过程，map的赋值、遍历、删除、扩容等"
 }
 ```
 
