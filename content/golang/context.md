@@ -87,7 +87,55 @@ caller 不应该去关心、干涉 callee 的情况，决定如何以及何时 r
 
 ### <span id="jump1_2_1">emptyCtx</span>
 
+源码中定义了 Context 接口后，并且给出了一个实现：
+```go
+type emptyCtx int
+func (*emptyCtx) Deadline() (deadline time.Time, ok bool) {
+    return
+}
+func (*emptyCtx) Done() <-chan struct{} {
+    return nil
+}
+func (*emptyCtx) Err() error {
+    return nil
+}
+func (*emptyCtx) Value(key interface{}) interface{} {
+    return nil
+}
+```
+所以，这实际上是一个空的 context，永远不会被 cancel，没有存储值，也没有 deadline。 被包装成：
+```go
+var (
+    background = new(emptyCtx)
+    todo       = new(emptyCtx)
+)
+```
+通过下面两个导出的函数（首字母大写）对外公开：
+```go
+func Background() Context {
+    return background
+}
+func TODO() Context {
+    return todo
+}
+```
+background 通常用在 main 函数中，作为所有 context 的根节点。
+
+todo 通常用在并不知道传递什么 context的情形。例如，调用一个需要传递 context 参数的函数，你手头并没有其他 context 可以传递，这时就可以传递 todo。这常常发生在重构进行中，给一些函数添加了一个 Context 参数，但不知道要传什么，就用 todo “占个位子”，最终要换成其他 context。
+
 ### <span id="jump1_2_2">cancelCtx</span>
+
+```go
+type cancelCtx struct {
+    Context
+    // 保护之后的字段
+    mu       sync.Mutex
+    done     chan struct{}
+    children map[canceler]struct{}
+    err      error
+}
+```
+
 
 ### <span id="jump1_2_3">timerCtx</span>
 
