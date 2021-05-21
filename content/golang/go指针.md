@@ -72,8 +72,164 @@ unsafe 包中的几个函数都是在编译期间执行完毕，毕竟，编译�
 
 # <span id="jump2">如何利用unsafe包修改私有成员</span>
 
+对于一个结构体，通过 offset 函数可以获取结构体成员的偏移量，进而获取成员的地址，读写该地址的内存，就可以达到改变成员值的目的。
+
+这里有一个内存分配相关的事实：结构体会被分配一块连续的内存，结构体的地址也代表了第一个成员的地址。
+
+我们来看一个例子：
+```go
+package main
+import (
+    "fmt"
+    "unsafe"
+)
+type Programmer struct {
+    name string
+    language string
+}
+func main() {
+    p := Programmer{"stefno", "go"}
+    fmt.Println(p)
+    name := (*string)(unsafe.Pointer(&p))
+    *name = "qcrao"
+    lang := (*string)(unsafe.Pointer(uintptr(unsafe.Pointer(&p)) + unsafe.Offsetof(p.language)))
+    *lang = "Golang"
+    fmt.Println(p)
+}
+```
+运行代码，输出：
+```go
+{stefno go}
+{qcrao Golang}
+```
+name 是结构体的第一个成员，因此可以直接将 &p 解析成 *string。这一点，在前面获取 map 的 count 成员时，用的是同样的原理。
+
+对于结构体的私有成员，现在有办法可以通过 unsafe.Pointer 改变它的值了。
+
+我把 Programmer 结构体升级，多加一个字段：
+```go
+type Programmer struct {
+    name string
+    age int
+    language string
+}
+```
+并且放在其他包，这样在 main 函数中，它的三个字段都是私有成员变量，不能直接修改。但我通过 unsafe.Sizeof() 函数可以获取成员大小，进而计算出成员的地址，直接修改内存。
+```go
+func main() {
+    p := Programmer{"stefno", 18, "go"}
+    fmt.Println(p)
+    lang := (*string)(unsafe.Pointer(uintptr(unsafe.Pointer(&p)) + unsafe.Sizeof(int(0)) + unsafe.Sizeof(string(""))))
+    *lang = "Golang"
+    fmt.Println(p)
+}
+```
+输出：
+```go
+{stefno 18 go}
+{stefno 18 Golang}
+```
+
 # <span id="jump3">如何利用unsafe获取slice&map的长度</span>
+
+## 获取 slice 长度
+slice header 的结构体定义：
+```go
+// runtime/slice.go
+type slice struct {
+    array unsafe.Pointer // 元素指针
+    len   int // 长度 
+    cap   int // 容量
+}
+```
+调用 make 函数新建一个 slice，底层调用的是 makeslice 函数，返回的是 slice 结构体：
+```go
+func makeslice(et *_type, len, cap int) slice
+```
+因此我们可以通过 unsafe.Pointer 和 uintptr 进行转换，得到 slice 的字段值。
+```go
+func main() {
+    s := make([]int, 9, 20)
+    var Len = *(*int)(unsafe.Pointer(uintptr(unsafe.Pointer(&s)) + uintptr(8)))
+    fmt.Println(Len, len(s)) // 9 9
+    var Cap = *(*int)(unsafe.Pointer(uintptr(unsafe.Pointer(&s)) + uintptr(16)))
+    fmt.Println(Cap, cap(s)) // 20 20
+}
+```
+Len，cap 的转换流程如下：
+```go
+Len: &s => pointer => uintptr => pointer => *int => int
+Cap: &s => pointer => uintptr => pointer => *int => int
+```
+
+## 获取 map 长度
+map：
+```go
+type hmap struct {
+    count     int
+    flags     uint8
+    B         uint8
+    noverflow uint16
+    hash0     uint32
+    buckets    unsafe.Pointer
+    oldbuckets unsafe.Pointer
+    nevacuate  uintptr
+    extra *mapextra
+}
+```
+和 slice 不同的是，makemap 函数返回的是 hmap 的指针，注意是指针：
+```go
+func makemap(t *maptype, hint int64, h *hmap, bucket unsafe.Pointer) *hmap
+```
+我们依然能通过 unsafe.Pointer 和 uintptr 进行转换，得到 hamp 字段的值，只不过，现在 count 变成二级指针了：
+```go
+func main() {
+    mp := make(map[string]int)
+    mp["qcrao"] = 100
+    mp["stefno"] = 18
+    count := **(**int)(unsafe.Pointer(&mp))
+    fmt.Println(count, len(mp)) // 2 2
+}
+```
+count 的转换过程：
+```go
+&mp => pointer => **int => int
+```
 
 # <span id="jump4">如何实现字符串和byte切片的零拷贝转换</span>
 
+这是一个非常精典的例子。实现字符串和 bytes 切片之间的转换，要求是 zero-copy。想一下，一般的做法，都需要遍历字符串或 bytes 切片，再挨个赋值。
 
+完成这个任务，我们需要了解 slice 和 string 的底层数据结构：
+```go
+type StringHeader struct {
+    Data uintptr
+    Len  int
+}
+type SliceHeader struct {
+    Data uintptr
+    Len  int
+    Cap  int
+}
+```
+上面是反射包下的结构体，路径：src/reflect/value.go。只需要共享底层 []byte 数组就可以实现 zero-copy。
+```go
+func string2bytes(s string) []byte {
+    stringHeader := (*reflect.StringHeader)(unsafe.Pointer(&s))
+    bh := reflect.SliceHeader{
+        Data: stringHeader.Data,
+        Len:  stringHeader.Len,
+        Cap:  stringHeader.Len,
+    }
+    return *(*[]byte)(unsafe.Pointer(&bh))
+}
+func bytes2string(b []byte) string{
+    sliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+    sh := reflect.StringHeader{
+        Data: sliceHeader.Data,
+        Len:  sliceHeader.Len,
+    }
+    return *(*string)(unsafe.Pointer(&sh))
+}
+```
+代码比较简单，不作详细解释。通过构造 slice header 和 string header，来完成 string 和 byte slice 之间的转换。
