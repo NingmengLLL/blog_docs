@@ -31,4 +31,28 @@
 
 [context.Value的查找过程](#jump3)
 
+# <span id="jump1">context源码</span>
 
+## <span id="jump1_1">接口</span>
+
+### <span id="jump1_1_1">Context</span>
+
+### <span id="jump1_1_2">canceler</span>
+
+## <span id="jump1_2">结构体</span>
+
+### <span id="jump1_2_1">emptyCtx</span>
+
+### <span id="jump1_2_2">cancelCtx</span>
+
+### <span id="jump1_2_3">timerCtx</span>
+
+# <span id="jump2">context的应用</span>
+
+## <span id="jump2_1">传递共享的数据</span>
+
+## <span id="jump2_2">取消goroutine</span>
+
+## <span id="jump2_3">防止goroutine泄漏</span>
+
+# <span id="jump3">context.Value的查找过程</span>
