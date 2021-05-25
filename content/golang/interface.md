@@ -311,7 +311,7 @@ src/main.go:23:6: cannot use Gopher literal (type Gopher) as type coder in assig
 如果实现了接收者是值类型的方法，会隐含地也实现了接收者是指针类型的方法。
 ```
 
-##<span id="jump2_3">两者分别在何时使用</span>
+## <span id="jump2_3">两者分别在何时使用</span>
 
 如果方法的接收者是值类型，无论调用者是对象还是对象指针，修改的都是对象的副本，不影响调用者；如果方法的接收者是指针类型，则调用者修改的是指针指向的对象本身。
 
