@@ -1,6 +1,6 @@
 ```json
 {
-  "date": "2026.04.12 21:03",
+  "date": "2026.02.19 21:03",
   "tags": ["Claude Code", "Agent", "核心命令"],
   "description": "claude code常用命令。"
 }
